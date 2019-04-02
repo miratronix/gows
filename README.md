@@ -14,7 +14,7 @@ import (
 
 // Initialize the websocket
 ws := gows.New(&gows.Configuration{
-    URL:                       "ws://some.url",         // The URL to connect to
+	URL:                       "ws://some.url",         // The URL to connect to
 	Query:                     "query_param=something", // Query parameters to add to the above URL
 	Logger:                    logpher.NewLogger("ws"), // The logger for the websocket
 	ConnectionRetries:         5,                       // The number of connection retries on initial connection
