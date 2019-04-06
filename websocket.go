@@ -55,7 +55,6 @@ func New(configuration *Configuration) *Websocket {
 		connectedHandlerLock:        &sync.Mutex{},
 		disconnectedHandler:         func() {},
 		disconnectedHandlerLock:     &sync.Mutex{},
-		heartbeatStopChannel:        make(chan struct{}),
 		sendChannel:                 make(chan []byte),
 		sendLockChannel:             nil,
 		senderStopChannel:           make(chan struct{}),

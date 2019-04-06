@@ -134,7 +134,8 @@ func (ws *Websocket) setConnection(connection *websocket.Conn) {
 	// Unlock the connection await lock
 	ws.connectionAwaitChannelsLock.Unlock()
 
-	// Set up a heartbeat if required
+	// Set up a heartbeat
+	ws.heartbeatStopChannel = make(chan struct{})
 	ws.heartbeatTicker = time.NewTicker(ws.configuration.HeartbeatInterval)
 	go func() {
 		for {
