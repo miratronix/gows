@@ -14,11 +14,19 @@ func (ws *Websocket) connect(retries bool) (*websocket.Conn, error) {
 		url := ws.configuration.URL
 		ws.configuration.Logger.Info("Attempting connection to", url)
 
+		// Append the provided query parameters
 		if len(ws.configuration.Query) != 0 {
 			url = fmt.Sprintf("%s?%s", url, ws.configuration.Query)
 		}
 
-		connection, _, err := websocket.DefaultDialer.Dial(url, nil)
+		// Create the dialer
+		dialer, err := ws.configuration.getDialer()
+		if err != nil {
+			return nil, err
+		}
+
+		// Dial the connection
+		connection, _, err := dialer.Dial(url, nil)
 		if err == nil {
 			ws.configuration.Logger.Info("Successfully connected websocket")
 			return connection, nil
@@ -172,7 +180,10 @@ func (ws *Websocket) clearConnection() {
 
 	// Close the connection
 	if ws.connection != nil {
-		ws.connection.Close()
+		err := ws.connection.Close()
+		if err != nil {
+			ws.configuration.Logger.Warn("Failed to close connection:", err)
+		}
 	}
 	ws.connection = nil
 

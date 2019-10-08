@@ -3,6 +3,7 @@ A basic reconnecting websocket library that supports:
 - Query parameters
 - Queueing during reconnects
 - Automatic heartbeats
+- Self-signed certificates for localhost connections
 
 ## Usage
 Usage is as simple as configuring and connecting:
@@ -24,6 +25,7 @@ ws := gows.New(&gows.Configuration{
 	ConnectionRetryRandomize:  false,                   // Whether to apply randomness to the timeout interval
 	HeartbeatInterval:         15 * time.Second,        // The interval to send heartbeat messages at
 	HeartbeatMessage:          []byte("ping"),          // The heartbeat message to send
+    InsecureLocalhost:         false,                   // Whether to skip certificate validation for localhost connections
 })
 
 // Attach handlers for various events
