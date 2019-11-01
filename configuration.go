@@ -23,6 +23,7 @@ type Configuration struct {
 	HeartbeatInterval         time.Duration
 	HeartbeatMessage          []byte
 	InsecureLocalhost         bool
+	RetryInitialConnection    bool
 
 	dialer *websocket.Dialer
 }

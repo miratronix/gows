@@ -48,7 +48,7 @@ func (ws *Websocket) connect(retries bool) (*websocket.Conn, error) {
 // reviver is a Goroutine responsible for initializing the websocket connection and reconnecting it when the connection is dropped
 func (ws *Websocket) reviver(initialConnectionErrorChannel chan error) {
 
-	connection, err := ws.connect(false)
+	connection, err := ws.connect(ws.configuration.RetryInitialConnection)
 	if err != nil {
 		initialConnectionErrorChannel <- err
 		return

@@ -26,6 +26,7 @@ ws := gows.New(&gows.Configuration{
 	HeartbeatInterval:         15 * time.Second,        // The interval to send heartbeat messages at
 	HeartbeatMessage:          []byte("ping"),          // The heartbeat message to send
 	InsecureLocalhost:         false,                   // Whether to skip certificate validation for localhost connections
+    RetryInitialConnection:    false,                   // Whether to apply retry logic to the initial connection attempt
 })
 
 // Attach handlers for various events
