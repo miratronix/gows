@@ -102,6 +102,11 @@ func (ws *Websocket) OnDisconnected(handler func()) {
 	ws.disconnectedHandlerLock.Unlock()
 }
 
+// IsConnected determines if the socket is currently connected
+func (ws *Websocket) IsConnected() bool {
+	return ws.connected.IsSet()
+}
+
 // BlockSend blocks message sending until UnblockSend() is called
 func (ws *Websocket) BlockSend() {
 	ws.sendLockChannel = make(chan struct{})

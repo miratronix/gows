@@ -46,6 +46,9 @@ ws.BlockSend()
 // Unblocks outgoing packets and flushes any queued packets
 ws.UnblockSend()
 
+// Determines if the socket is currently connected (false during reconnects)
+connected := ws.IsConnected()
+
 // Disconnects the socket
 err = ws.Disconnect()
 ```
