@@ -1,5 +1,10 @@
 package gows
 
+import (
+	"errors"
+	"strings"
+)
+
 // startConsumer starts the websocket consumer
 func (ws *Websocket) startConsumer() {
 
@@ -29,6 +34,13 @@ func (ws *Websocket) startConsumer() {
 
 				// Connection dropped, stop consuming, clear the consumer stop channel, and kill this goroutine
 				if err != nil {
+
+					// If the network connection was closed, clean up the logged message
+					if strings.HasSuffix(err.Error(), "use of closed network connection") {
+						err = errors.New("client was closed")
+					}
+
+					// Remove the stop channel and write the error to the drop channel
 					ws.consumerStopChannelLock.Lock()
 					ws.consumerStopChannel = nil
 					ws.consumerStopChannelLock.Unlock()

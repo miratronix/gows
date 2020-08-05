@@ -3,6 +3,7 @@ package gows
 import (
 	"fmt"
 	"github.com/gorilla/websocket"
+	"strings"
 	"time"
 )
 
@@ -178,10 +179,10 @@ func (ws *Websocket) clearConnection() {
 	// Stop the consumer if it's running
 	ws.stopConsumer()
 
-	// Close the connection
+	// Close the connection and log an error if closing it failed
 	if ws.connection != nil {
 		err := ws.connection.Close()
-		if err != nil {
+		if err != nil && !strings.HasSuffix(err.Error(), "use of closed connection") {
 			ws.configuration.Logger.Warn("Failed to close connection:", err)
 		}
 	}
