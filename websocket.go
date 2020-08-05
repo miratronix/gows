@@ -74,6 +74,15 @@ func (ws *Websocket) Connect() error {
 	return <-initialConnectionErrorChannel
 }
 
+// Reconnect forces a reconnection if currently connected, by closing the underlying connection. The consumer then fails
+// to read and forces a revival as normal
+func (ws *Websocket) Reconnect() error {
+	if !ws.connected.IsSet() {
+		return nil
+	}
+	return ws.connection.Close()
+}
+
 // Send sends a message with the provided details in a separate goroutine (so it doesn't block on reconnects)
 func (ws *Websocket) Send(msg []byte) {
 	go func() {
