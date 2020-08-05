@@ -1,6 +1,7 @@
 package gows
 
 import (
+	"errors"
 	"github.com/gorilla/websocket"
 	"github.com/tevino/abool"
 	"sync"
@@ -72,6 +73,16 @@ func (ws *Websocket) Connect() error {
 	go ws.reviver(initialConnectionErrorChannel)
 
 	return <-initialConnectionErrorChannel
+}
+
+// Reconnect forces a reconnection if currently connected, by writing an error to the connection channel. The reviver
+// then brings the connection back as normal, with the same settings. OnConnected and OnDisconnected will be called as
+// normal
+func (ws *Websocket) Reconnect() {
+	if !ws.connected.IsSet() {
+		return
+	}
+	ws.connectionDroppedChannel <- errors.New("client requested reconnect")
 }
 
 // Send sends a message with the provided details in a separate goroutine (so it doesn't block on reconnects)
