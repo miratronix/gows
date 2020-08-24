@@ -4,7 +4,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tevino/abool"
 	"sync"
-	"time"
 )
 
 // Websocket defines a simple websocket structure
@@ -12,61 +11,62 @@ type Websocket struct {
 	configuration *Configuration
 
 	// Connection information
-	connected                   *abool.AtomicBool // Whether we are currently connected
-	connection                  *websocket.Conn   // The websocket connection
-	stopChannel                 chan struct{}     // The channel to send to when stopping the connection reviver
-	connectionDroppedChannel    chan error        // The connection drop channel to listen on for connection failures
-	connectionAwaitChannels     []chan struct{}   // Slice of channels that are currently awaiting reconnect
-	connectionAwaitChannelsLock *sync.Mutex       // Lock for the connection await channels slice
+	connected                *abool.AtomicBool // Whether we are currently connected
+	connection               *websocket.Conn   // The websocket connection
+	stopChannel              chan struct{}     // The channel to send to when stopping the connection reviver
+	connectionDroppedChannel chan error        // The connection drop channel to listen on for connection failures
 
-	// Consumer information
-	consumer                func([]byte)  // The websocket consumer
-	consumerLock            *sync.Mutex   // Lock for the consumer list
+	// Consumer stop information
 	consumerStopChannel     chan struct{} // Stop channel for the consumer
 	consumerStopChannelLock *sync.Mutex   // Lock for the consumer stop channel
 
+	// Sender information
+	sendQueue             *queue        // Queue of messages to send
+	senderStopChannel     chan struct{} // Stop channel for the sender
+	senderStopChannelLock *sync.Mutex   // Lock for the sender stop channel
+
 	// Handler information
-	connectedHandler        func()
-	connectedHandlerLock    *sync.Mutex
-	disconnectedHandler     func()
-	disconnectedHandlerLock *sync.Mutex
-
-	// Heartbeat information
-	heartbeatTicker      *time.Ticker
-	heartbeatStopChannel chan struct{}
-
-	// Sending information
-	sendChannel       chan []byte
-	sendLockChannel   chan struct{}
-	senderStopChannel chan struct{}
+	messageHandler          func([]byte) // The websocket handler
+	messageHandlerLock      *sync.Mutex  // Lock for the handler
+	connectedHandler        func()       // The connected handler
+	connectedHandlerLock    *sync.Mutex  // Lock for the connection handler
+	disconnectedHandler     func()       // The disconnected handler
+	disconnectedHandlerLock *sync.Mutex  // Lock for the disconnectedHandler
 }
 
 // New constructs a new websocket object
 func New(configuration *Configuration) *Websocket {
 	return &Websocket{
-		configuration:               configuration,
-		connected:                   abool.New(),
-		stopChannel:                 make(chan struct{}),
-		connectionAwaitChannelsLock: &sync.Mutex{},
-		consumerLock:                &sync.Mutex{},
-		consumerStopChannelLock:     &sync.Mutex{},
-		consumer:                    func([]byte) {},
-		connectedHandler:            func() {},
-		connectedHandlerLock:        &sync.Mutex{},
-		disconnectedHandler:         func() {},
-		disconnectedHandlerLock:     &sync.Mutex{},
-		sendChannel:                 make(chan []byte),
-		sendLockChannel:             nil,
-		senderStopChannel:           make(chan struct{}),
+		configuration: configuration,
+
+		// Connection information
+		connected:                abool.New(),
+		connection:               nil,
+		stopChannel:              make(chan struct{}),
+		connectionDroppedChannel: nil,
+
+		// Consumer stop information
+		consumerStopChannel:     nil,
+		consumerStopChannelLock: &sync.Mutex{},
+
+		// Sender information
+		sendQueue:             newQueue(),
+		senderStopChannel:     nil,
+		senderStopChannelLock: &sync.Mutex{},
+
+		// Handler information
+		messageHandler:          func([]byte) {},
+		messageHandlerLock:      &sync.Mutex{},
+		connectedHandler:        func() {},
+		connectedHandlerLock:    &sync.Mutex{},
+		disconnectedHandler:     func() {},
+		disconnectedHandlerLock: &sync.Mutex{},
 	}
 }
 
 // Connect connects the websocket
 func (ws *Websocket) Connect() error {
 	initialConnectionErrorChannel := make(chan error)
-
-	// Start up the message sender
-	go ws.sender()
 
 	// Start up the reviver
 	go ws.reviver(initialConnectionErrorChannel)
@@ -77,17 +77,15 @@ func (ws *Websocket) Connect() error {
 // Reconnect forces a reconnection if currently connected, by closing the underlying connection. The consumer then fails
 // to read and forces a revival as normal
 func (ws *Websocket) Reconnect() error {
-	if !ws.connected.IsSet() {
+	if ws.connected.IsNotSet() {
 		return nil
 	}
 	return ws.connection.Close()
 }
 
-// Send sends a message with the provided details in a separate goroutine (so it doesn't block on reconnects)
+// Send sends a binary message with the provided body
 func (ws *Websocket) Send(msg []byte) {
-	go func() {
-		ws.sendChannel <- msg
-	}()
+	ws.sendQueue.push(msg)
 }
 
 // OnConnected sets the onConnected handler
@@ -98,10 +96,10 @@ func (ws *Websocket) OnConnected(handler func()) {
 }
 
 // OnMessage sets the onMessage handler
-func (ws *Websocket) OnMessage(consumer func([]byte)) {
-	ws.consumerLock.Lock()
-	ws.consumer = consumer
-	ws.consumerLock.Unlock()
+func (ws *Websocket) OnMessage(handler func([]byte)) {
+	ws.messageHandlerLock.Lock()
+	ws.messageHandler = handler
+	ws.messageHandlerLock.Unlock()
 }
 
 // OnDisconnected sets the onDisconnected handler
@@ -118,23 +116,17 @@ func (ws *Websocket) IsConnected() bool {
 
 // BlockSend blocks message sending until UnblockSend() is called
 func (ws *Websocket) BlockSend() {
-	ws.sendLockChannel = make(chan struct{})
+	ws.sendQueue.pause()
 }
 
 // UnblockSend stops blocking message sending
 func (ws *Websocket) UnblockSend() {
-	if ws.sendLockChannel == nil {
-		return
-	}
-	close(ws.sendLockChannel)
-	ws.sendLockChannel = nil
+	ws.sendQueue.resume()
 }
 
 // Disconnect disconnects the websocket
-func (ws *Websocket) Disconnect() error {
+func (ws *Websocket) Disconnect() {
 	if ws.connected.IsSet() {
 		close(ws.stopChannel)
 	}
-	close(ws.senderStopChannel)
-	return nil
 }
