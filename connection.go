@@ -86,77 +86,22 @@ func (ws *Websocket) reviver(initialConnectionErrorChannel chan error) {
 	}
 }
 
-// getConnection gets the websocket connection if it's present. Otherwise, blocks until the connection is established
-func (ws *Websocket) getConnection() *websocket.Conn {
-
-	// If we're already connected, just return the connection
-	if ws.connected.IsSet() {
-		return ws.connection
-	}
-
-	// Lock the await channels slice to prevent multiple writes
-	ws.connectionAwaitChannelsLock.Lock()
-
-	// If we just received the lock after the connection has been completed, we have our connection
-	if ws.connected.IsSet() {
-		ws.connectionAwaitChannelsLock.Unlock()
-		return ws.connection
-	}
-
-	// Otherwise, we'll add ourselves to the connection await slice
-	connectionAwaitChannel := make(chan struct{})
-	ws.connectionAwaitChannels = append(ws.connectionAwaitChannels, connectionAwaitChannel)
-
-	// All done with the lock
-	ws.connectionAwaitChannelsLock.Unlock()
-
-	// Block until we're connected
-	<-connectionAwaitChannel
-
-	return ws.connection
-}
-
 // setConnection initializes the websocket, starting up the reader and unblocking any goroutines trying to send stuff
 func (ws *Websocket) setConnection(connection *websocket.Conn) {
 	ws.connection = connection
 
-	// Start the message consumer
-	ws.startConsumer()
-
-	// Lock the connection await channels slice
-	ws.connectionAwaitChannelsLock.Lock()
-
-	// Unblock any goroutines awaiting a connection
-	for _, connectionAwaitChannel := range ws.connectionAwaitChannels {
-		close(connectionAwaitChannel)
-	}
-	ws.connectionAwaitChannels = []chan struct{}{}
-
 	// Indicate that the connection was successful
 	ws.connected.SetTo(true)
 
-	// Call the connection handler before unlocking the await lock and sending queued messages
+	// Call the connection handler
 	ws.connectedHandlerLock.Lock()
 	ws.connectedHandler()
 	ws.connectedHandlerLock.Unlock()
 
-	// Unlock the connection await lock
-	ws.connectionAwaitChannelsLock.Unlock()
-
-	// Set up a heartbeat
-	ws.heartbeatStopChannel = make(chan struct{})
-	ws.heartbeatTicker = time.NewTicker(ws.configuration.HeartbeatInterval)
-	go func() {
-		for {
-			select {
-			case <-ws.heartbeatStopChannel:
-				return
-
-			case <-ws.heartbeatTicker.C:
-				ws.Send(ws.configuration.HeartbeatMessage)
-			}
-		}
-	}()
+	// Start the message consumer and sender after calling the connection handler, to ensure no events come in
+	// before the connected handler has completed
+	ws.startConsumer()
+	ws.startSender()
 
 	// Add a close listener that writes on the connection drop channel
 	ws.connectionDroppedChannel = make(chan error)
@@ -169,15 +114,12 @@ func (ws *Websocket) setConnection(connection *websocket.Conn) {
 // clearConnection terminates the connection, cleaning up the consumer and closing the connection if present
 func (ws *Websocket) clearConnection() {
 
-	// Stop the heartbeat and its ticker
-	close(ws.heartbeatStopChannel)
-	ws.heartbeatTicker.Stop()
+	// Stop the consumer and sender
+	ws.stopConsumer()
+	ws.stopSender()
 
 	// Set the connection state to false
 	ws.connected.SetTo(false)
-
-	// Stop the consumer if it's running
-	ws.stopConsumer()
 
 	// Close the connection and log an error if closing it failed
 	if ws.connection != nil {
@@ -192,4 +134,13 @@ func (ws *Websocket) clearConnection() {
 	ws.disconnectedHandlerLock.Lock()
 	ws.disconnectedHandler()
 	ws.disconnectedHandlerLock.Unlock()
+}
+
+// handleConnectionError writes the supplied connection error to the connection drop channel. If there are no goroutines
+// currently waiting on the drop channel, it means that we're currently reviving already, so the error can be dropped
+func (ws *Websocket) handleConnectionError(err error) {
+	select {
+	case ws.connectionDroppedChannel <- err:
+	default:
+	}
 }

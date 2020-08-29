@@ -20,8 +20,9 @@ type Configuration struct {
 	ConnectionRetryTimeoutMin time.Duration
 	ConnectionRetryTimeoutMax time.Duration
 	ConnectionRetryRandomize  bool
-	HeartbeatInterval         time.Duration
-	HeartbeatMessage          []byte
+	PingInterval              time.Duration
+	WriteTimeout              time.Duration
+	ReadTimeout               time.Duration
 	InsecureLocalhost         bool
 	RetryInitialConnection    bool
 
