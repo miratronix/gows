@@ -22,9 +22,17 @@ func (ws *Websocket) sender() {
 		// Got a new message to send
 		case msg := <-ws.sendQueue.pop():
 
+			// Get the connection. If it's nil, we're about to be restarted. Requeue the message and kill this goroutine,
+			// the reviver will restart us when a new connection is established
+			connection := ws.getConnection()
+			if connection == nil {
+				ws.sendQueue.unPop(msg)
+				return
+			}
+
 			// Write the message
-			_ = ws.connection.SetWriteDeadline(time.Now().Add(ws.configuration.WriteTimeout))
-			err := ws.connection.WriteMessage(websocket.BinaryMessage, msg)
+			_ = connection.SetWriteDeadline(time.Now().Add(ws.configuration.WriteTimeout))
+			err := connection.WriteMessage(websocket.BinaryMessage, msg)
 			if err == nil {
 				continue
 			}
@@ -39,9 +47,16 @@ func (ws *Websocket) sender() {
 		// Send a ping
 		case <-pingTicker.C:
 
+			// Get the connection. If it's nil, we're about to restarted. Ignore the ping and kill this goroutine, the
+			// reviver will restart us when a new connection comes in
+			connection := ws.getConnection()
+			if connection == nil {
+				return
+			}
+
 			// Write the ping message. If there's a timeout, clean up the stop channel, write the error, and kill this goroutine
-			_ = ws.connection.SetWriteDeadline(time.Now().Add(ws.configuration.WriteTimeout))
-			err := ws.connection.WriteMessage(websocket.PingMessage, nil)
+			_ = connection.SetWriteDeadline(time.Now().Add(ws.configuration.WriteTimeout))
+			err := connection.WriteMessage(websocket.PingMessage, nil)
 			if err == nil {
 				continue
 			}

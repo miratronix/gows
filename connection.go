@@ -88,10 +88,22 @@ func (ws *Websocket) reviver(initialConnectionErrorChannel chan error) {
 
 // setConnection initializes the websocket, starting up the reader and unblocking any goroutines trying to send stuff
 func (ws *Websocket) setConnection(connection *websocket.Conn) {
+
+	// Lock on the connection lock while modifying the connection
+	ws.connectionLock.Lock()
+
+	// Set the connection
 	ws.connection = connection
 
-	// Indicate that the connection was successful
-	ws.connected.SetTo(true)
+	// Add a close listener that writes on the connection drop channel
+	ws.connectionDroppedChannel = make(chan error)
+	ws.connection.SetCloseHandler(func(code int, message string) error {
+		ws.connectionDroppedChannel <- fmt.Errorf("websocket closed with code %d:%s", code, message)
+		return nil
+	})
+
+	// Release the connection lock
+	ws.connectionLock.Unlock()
 
 	// Call the connection handler
 	ws.connectedHandlerLock.Lock()
@@ -102,13 +114,6 @@ func (ws *Websocket) setConnection(connection *websocket.Conn) {
 	// before the connected handler has completed
 	ws.startConsumer()
 	ws.startSender()
-
-	// Add a close listener that writes on the connection drop channel
-	ws.connectionDroppedChannel = make(chan error)
-	ws.connection.SetCloseHandler(func(code int, message string) error {
-		ws.connectionDroppedChannel <- fmt.Errorf("websocket closed with code %d:%s", code, message)
-		return nil
-	})
 }
 
 // clearConnection terminates the connection, cleaning up the consumer and closing the connection if present
@@ -118,8 +123,8 @@ func (ws *Websocket) clearConnection() {
 	ws.stopConsumer()
 	ws.stopSender()
 
-	// Set the connection state to false
-	ws.connected.SetTo(false)
+	// Lock on the connection lock while modifying the connection
+	ws.connectionLock.Lock()
 
 	// Close the connection and log an error if closing it failed
 	if ws.connection != nil {
@@ -128,12 +133,27 @@ func (ws *Websocket) clearConnection() {
 			ws.configuration.Logger.Warn("Failed to close connection:", err)
 		}
 	}
+
+	// Clear the connection
 	ws.connection = nil
+
+	// Release the connection lock
+	ws.connectionLock.Unlock()
 
 	// Call the disconnect handler
 	ws.disconnectedHandlerLock.Lock()
 	ws.disconnectedHandler()
 	ws.disconnectedHandlerLock.Unlock()
+}
+
+// getConnection gets the current websocket connection
+func (ws *Websocket) getConnection() *websocket.Conn {
+
+	// Lock on the connection lock
+	ws.connectionLock.Lock()
+	defer ws.connectionLock.Unlock()
+
+	return ws.connection
 }
 
 // handleConnectionError writes the supplied connection error to the connection drop channel. If there are no goroutines

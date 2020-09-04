@@ -2,7 +2,6 @@ package gows
 
 import (
 	"github.com/gorilla/websocket"
-	"github.com/tevino/abool"
 	"sync"
 )
 
@@ -11,10 +10,10 @@ type Websocket struct {
 	configuration *Configuration
 
 	// Connection information
-	connected                *abool.AtomicBool // Whether we are currently connected
-	connection               *websocket.Conn   // The websocket connection
-	stopChannel              chan struct{}     // The channel to send to when stopping the connection reviver
-	connectionDroppedChannel chan error        // The connection drop channel to listen on for connection failures
+	connection               *websocket.Conn // The websocket connection
+	connectionLock           *sync.Mutex     // Lock for the connection
+	stopChannel              chan struct{}   // The channel to send to when stopping the connection reviver
+	connectionDroppedChannel chan error      // The connection drop channel to listen on for connection failures
 
 	// Consumer stop information
 	consumerStopChannel     chan struct{} // Stop channel for the consumer
@@ -40,8 +39,8 @@ func New(configuration *Configuration) *Websocket {
 		configuration: configuration,
 
 		// Connection information
-		connected:                abool.New(),
 		connection:               nil,
+		connectionLock:           &sync.Mutex{},
 		stopChannel:              make(chan struct{}),
 		connectionDroppedChannel: nil,
 
@@ -77,10 +76,14 @@ func (ws *Websocket) Connect() error {
 // Reconnect forces a reconnection if currently connected, by closing the underlying connection. The consumer then fails
 // to read and forces a revival as normal
 func (ws *Websocket) Reconnect() error {
-	if ws.connected.IsNotSet() {
+
+	// If the connection is nil, we're not connected
+	connection := ws.getConnection()
+	if connection == nil {
 		return nil
 	}
-	return ws.connection.Close()
+
+	return connection.Close()
 }
 
 // Send sends a binary message with the provided body
@@ -111,7 +114,7 @@ func (ws *Websocket) OnDisconnected(handler func()) {
 
 // IsConnected determines if the socket is currently connected
 func (ws *Websocket) IsConnected() bool {
-	return ws.connected.IsSet()
+	return ws.getConnection() != nil
 }
 
 // BlockSend blocks message sending until UnblockSend() is called
@@ -126,7 +129,7 @@ func (ws *Websocket) UnblockSend() {
 
 // Disconnect disconnects the websocket
 func (ws *Websocket) Disconnect() {
-	if ws.connected.IsSet() {
+	if ws.getConnection() != nil {
 		close(ws.stopChannel)
 	}
 }

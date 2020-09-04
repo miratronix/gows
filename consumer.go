@@ -6,13 +6,20 @@ import (
 	"time"
 )
 
-// consumer defines the goroutine responsible for reading messages from the conenction
+// consumer defines the goroutine responsible for reading messages from the connection
 func (ws *Websocket) consumer() {
 
+	// Get the current connection. If it's nil, it means that the connection dropped while we were starting up. Nothing
+	// to do with this connection, so just exit and let the reviver start us up again
+	connection := ws.getConnection()
+	if connection == nil {
+		return
+	}
+
 	// Set up the read deadline and a pong handler that refreshes the deadline
-	_ = ws.connection.SetReadDeadline(time.Now().Add(ws.configuration.ReadTimeout))
-	ws.connection.SetPongHandler(func(string) error {
-		_ = ws.connection.SetReadDeadline(time.Now().Add(ws.configuration.ReadTimeout))
+	_ = connection.SetReadDeadline(time.Now().Add(ws.configuration.ReadTimeout))
+	connection.SetPongHandler(func(string) error {
+		_ = connection.SetReadDeadline(time.Now().Add(ws.configuration.ReadTimeout))
 		return nil
 	})
 
@@ -23,7 +30,7 @@ func (ws *Websocket) consumer() {
 			return
 
 		default:
-			_, message, err := ws.connection.ReadMessage()
+			_, message, err := connection.ReadMessage()
 
 			// Connection dropped, stop consuming, clear the consumer stop channel, and kill this goroutine
 			if err != nil {
