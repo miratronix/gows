@@ -24,8 +24,8 @@ ws := gows.New(&gows.Configuration{
 	ConnectionRetryTimeoutMax: 5 * time.Second,         // The maximum timeout for connection retries
 	ConnectionRetryRandomize:  false,                   // Whether to apply randomness to the timeout interval
 	PingInterval               30 * time.Second,        // The interval to send pings at
-    WriteTimeout               5 * time.Second,         // The timeout for write operations
-    ReadTimeout                35 * time.Second,        // The timeout for read operations. Should be longer than the ping interval
+	WriteTimeout               5 * time.Second,         // The timeout for write operations
+	ReadTimeout                35 * time.Second,        // The timeout for read operations. Should be longer than the ping interval
 	InsecureLocalhost:         false,                   // Whether to skip certificate validation for localhost connections
 	RetryInitialConnection:    false,                   // Whether to apply retry logic to the initial connection attempt
 })
