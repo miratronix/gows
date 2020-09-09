@@ -37,6 +37,7 @@ func (ws *Websocket) connect(retries bool) (*websocket.Conn, error) {
 		keepTrying := retries && (ws.configuration.ConnectionRetries == 0 || attempt < (ws.configuration.ConnectionRetries-1))
 
 		if !keepTrying {
+			ws.configuration.Logger.Info("Failed to connect websocket after", retries, "attempts")
 			return nil, err
 		}
 
@@ -76,11 +77,12 @@ func (ws *Websocket) reviver(initialConnectionErrorChannel chan error) {
 				break
 			}
 
-			ws.clearConnection()
+			// Clear out the connection
 			ws.configuration.Logger.Warn("Websocket connection lost:", err)
-			connection, _ := ws.connect(true)
+			ws.clearConnection()
 
-			// Set the connection, starting the message consumer
+			// And establish a new one
+			connection, _ := ws.connect(true)
 			ws.setConnection(connection)
 		}
 	}
@@ -88,8 +90,10 @@ func (ws *Websocket) reviver(initialConnectionErrorChannel chan error) {
 
 // setConnection initializes the websocket, starting up the reader and unblocking any goroutines trying to send stuff
 func (ws *Websocket) setConnection(connection *websocket.Conn) {
+	ws.configuration.Logger.Debug("Preparing new connection...")
 
 	// Lock on the connection lock while modifying the connection
+	ws.configuration.Logger.Trace("Initializing connection object...")
 	ws.connectionLock.Lock()
 
 	// Set the connection
@@ -104,26 +108,37 @@ func (ws *Websocket) setConnection(connection *websocket.Conn) {
 
 	// Release the connection lock
 	ws.connectionLock.Unlock()
+	ws.configuration.Logger.Trace("Successfully initialized connection object")
 
 	// Call the connection handler
+	ws.configuration.Logger.Trace("Calling connection handler...")
 	ws.connectedHandlerLock.Lock()
 	ws.connectedHandler()
 	ws.connectedHandlerLock.Unlock()
+	ws.configuration.Logger.Trace("Successfully called connection handler")
 
 	// Start the message consumer and sender after calling the connection handler, to ensure no events come in
 	// before the connected handler has completed
+	ws.configuration.Logger.Trace("Starting consumer/sender goroutines...")
 	ws.startConsumer()
 	ws.startSender()
+	ws.configuration.Logger.Trace("Successfully started consumer/sender goroutines")
+
+	ws.configuration.Logger.Debug("Successfully prepared new connection")
 }
 
 // clearConnection terminates the connection, cleaning up the consumer and closing the connection if present
 func (ws *Websocket) clearConnection() {
+	ws.configuration.Logger.Debug("Clearing out connection...")
 
 	// Stop the consumer and sender
+	ws.configuration.Logger.Trace("Stopping consumer/sender goroutines...")
 	ws.stopConsumer()
 	ws.stopSender()
+	ws.configuration.Logger.Trace("Successfully stopped consumer/sender goroutines")
 
 	// Lock on the connection lock while modifying the connection
+	ws.configuration.Logger.Trace("Closing and removing connection object...")
 	ws.connectionLock.Lock()
 
 	// Close the connection and log an error if closing it failed
@@ -139,11 +154,16 @@ func (ws *Websocket) clearConnection() {
 
 	// Release the connection lock
 	ws.connectionLock.Unlock()
+	ws.configuration.Logger.Trace("Successfully closed and removed connection object")
 
 	// Call the disconnect handler
+	ws.configuration.Logger.Trace("Calling disconnect handler...")
 	ws.disconnectedHandlerLock.Lock()
 	ws.disconnectedHandler()
 	ws.disconnectedHandlerLock.Unlock()
+	ws.configuration.Logger.Trace("Successfully called disconnect handler")
+
+	ws.configuration.Logger.Debug("Successfully cleared out connection")
 }
 
 // getConnection gets the current websocket connection
