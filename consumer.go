@@ -13,23 +13,28 @@ func (ws *Websocket) consumer() {
 	// to do with this connection, so just exit and let the reviver start us up again
 	connection := ws.getConnection()
 	if connection == nil {
+		ws.configuration.Logger.Trace("CONSUMER: No connection on startup, shutting down")
 		return
 	}
 
 	// Set up the read deadline and a pong handler that refreshes the deadline
+	ws.configuration.Logger.Trace("CONSUMER: Setting read deadline...")
 	_ = connection.SetReadDeadline(time.Now().Add(ws.configuration.ReadTimeout))
 	connection.SetPongHandler(func(string) error {
 		_ = connection.SetReadDeadline(time.Now().Add(ws.configuration.ReadTimeout))
 		return nil
 	})
+	ws.configuration.Logger.Trace("CONSUMER: Successfully set read deadline")
 
 	for {
 		select {
 
 		case <-ws.consumerStopChannel:
+			ws.configuration.Logger.Trace("CONSUMER: Shutting down")
 			return
 
 		default:
+			ws.configuration.Logger.Trace("CONSUMER: Reading message...")
 			_, message, err := connection.ReadMessage()
 
 			// Connection dropped, stop consuming, clear the consumer stop channel, and kill this goroutine
@@ -40,15 +45,19 @@ func (ws *Websocket) consumer() {
 					err = errors.New("client was closed")
 				}
 
-				// Clean up the consumer stop channel, write a connection error, and kill this goroutine
-				ws.stopConsumer()
+				// Write an error to the connection error channel and kill this goroutine
+				ws.configuration.Logger.Trace("CONSUMER: Failed to read message, flagging connection drop...")
 				ws.handleConnectionError(err)
+				ws.configuration.Logger.Trace("CONSUMER: Successfully flagged connection drop")
 				return
 			}
 
 			// Handle the message in a goroutine
+			ws.configuration.Logger.Trace("CONSUMER: Successfully read message")
 			go func() {
+				ws.configuration.Logger.Trace("CONSUMER: Calling message handler...")
 				ws.messageHandler(message)
+				ws.configuration.Logger.Trace("CONSUMER: Successfully called message handler")
 			}()
 		}
 	}
@@ -56,30 +65,15 @@ func (ws *Websocket) consumer() {
 
 // startConsumer starts the websocket consumer
 func (ws *Websocket) startConsumer() {
-
-	// If we're already started, do nothing
-	ws.consumerStopChannelLock.Lock()
-	started := ws.consumerStopChannel != nil
-	ws.consumerStopChannelLock.Unlock()
-	if started {
-		return
-	}
-
-	// Set up an exit channel for killing the consumer
-	ws.consumerStopChannelLock.Lock()
+	ws.configuration.Logger.Trace("Starting consumer goroutine...")
 	ws.consumerStopChannel = make(chan struct{})
-	ws.consumerStopChannelLock.Unlock()
-
-	// Start up the consumer goroutine
 	go ws.consumer()
+	ws.configuration.Logger.Trace("Successfully started consumer goroutine")
 }
 
 // stopConsumer stops the consumer
 func (ws *Websocket) stopConsumer() {
-	ws.consumerStopChannelLock.Lock()
-	if ws.consumerStopChannel != nil {
-		close(ws.consumerStopChannel)
-		ws.consumerStopChannel = nil
-	}
-	ws.consumerStopChannelLock.Unlock()
+	ws.configuration.Logger.Trace("Stopping consumer goroutine...")
+	close(ws.consumerStopChannel)
+	ws.configuration.Logger.Trace("Successfully stopped consumer goroutine")
 }

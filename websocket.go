@@ -16,13 +16,11 @@ type Websocket struct {
 	connectionDroppedChannel chan error      // The connection drop channel to listen on for connection failures
 
 	// Consumer stop information
-	consumerStopChannel     chan struct{} // Stop channel for the consumer
-	consumerStopChannelLock *sync.Mutex   // Lock for the consumer stop channel
+	consumerStopChannel chan struct{} // Stop channel for the consumer
 
 	// Sender information
-	sendQueue             *queue        // Queue of messages to send
-	senderStopChannel     chan struct{} // Stop channel for the sender
-	senderStopChannelLock *sync.Mutex   // Lock for the sender stop channel
+	sendQueue         *queue        // Queue of messages to send
+	senderStopChannel chan struct{} // Stop channel for the sender
 
 	// Handler information
 	messageHandler          func([]byte) // The websocket handler
@@ -45,13 +43,11 @@ func New(configuration *Configuration) *Websocket {
 		connectionDroppedChannel: nil,
 
 		// Consumer stop information
-		consumerStopChannel:     nil,
-		consumerStopChannelLock: &sync.Mutex{},
+		consumerStopChannel: nil,
 
 		// Sender information
-		sendQueue:             newQueue(),
-		senderStopChannel:     nil,
-		senderStopChannelLock: &sync.Mutex{},
+		sendQueue:         newQueue(),
+		senderStopChannel: nil,
 
 		// Handler information
 		messageHandler:          func([]byte) {},
@@ -71,19 +67,6 @@ func (ws *Websocket) Connect() error {
 	go ws.reviver(initialConnectionErrorChannel)
 
 	return <-initialConnectionErrorChannel
-}
-
-// Reconnect forces a reconnection if currently connected, by closing the underlying connection. The consumer then fails
-// to read and forces a revival as normal
-func (ws *Websocket) Reconnect() error {
-
-	// If the connection is nil, we're not connected
-	connection := ws.getConnection()
-	if connection == nil {
-		return nil
-	}
-
-	return connection.Close()
 }
 
 // Send sends a binary message with the provided body
